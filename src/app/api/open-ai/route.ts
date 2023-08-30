@@ -24,14 +24,4 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(answer);
 }
 
-// export const POST = async (request: NextRequest) => {
-//   const { messages } = await request.json()
-
-//   const stream = await openai.chat.completions.create({
-//     model: 'gpt-4',
-//     messages: [{ role: 'user', content }],
-//     stream: true,
-//   })
-// }
-
 export const revalidate = 60 * 30
