@@ -1,27 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import { OpenAIStream, StreamingTextResponse } from 'ai'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import openai from '@/services/openai';
 
-const generateText = async (content: string) => {
-  const completion = await openai.chat.completions.create({
-    messages: [{ role: 'user', content}],
+export const runtime = 'edge'
+
+export const POST = async (request: NextRequest) => {
+  const { messages } = await request.json()
+
+  const aiResponse = await openai.createChatCompletion({
     model: 'gpt-3.5-turbo',
+    stream: true,
+    messages,
+    max_tokens: 500,
+    temperature: 0.7,
+    top_p: 1,
+    frequency_penalty: 1,
+    presence_penalty: 1,
   })
 
-  return completion.choices[0].message.content
-}
-
-export async function GET(request: NextRequest) {
-  const url = new URL(request.url);
-  const searchParams = new URLSearchParams(url.search);
-  const question = searchParams.get('question')
-
-  const answer = await generateText(question || '')
-
-  return NextResponse.json(answer);
+  const stream = OpenAIStream(aiResponse)
+ 
+  return new StreamingTextResponse(stream)
 }
 
 export const revalidate = 60 * 30

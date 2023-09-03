@@ -1,48 +1,79 @@
+// Ref: https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream
 'use client'
 
+import { ChatCompletionRequestMessage } from "openai-edge"
 import { FormEventHandler, useEffect, useRef, useState } from "react"
 
 export default function Home() {
   const scrollableBoxRef = useRef<HTMLDivElement>(null)
 
-  const [chatHistory, setChatHistory] = useState<{
-    timestamp: number
-    from: 'bot' | 'user'
-    content: string
-  }[]>([])
+  const [chatHistory, setChatHistory] = useState<ChatCompletionRequestMessage[]>([])
   const [questionInput, setQuestionInput] = useState('')
-  const [isGeneratingAnswer, setIsGeneratingAnswer] = useState(false)
 
   const handleQuestionSubmit: FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault()
 
     const question = questionInput.trim()
+    const userMessage: ChatCompletionRequestMessage = {
+      role: 'user',
+      content: question,
+    }
+    const messagesToBeSent = [
+      ...chatHistory,
+      userMessage,
+    ]
 
-    setChatHistory(prevHistory => [
-      ...prevHistory,
+    setChatHistory([
+      ...messagesToBeSent,
       {
-        timestamp: Date.now(),
-        from: 'user',
-        content: question,
+        role: 'assistant',
+        content: '',
       },
     ])
 
     setQuestionInput('')
-    setIsGeneratingAnswer(true)
 
-    const answer = await fetch(`http://localhost:3000/api/open-ai?question=${question}`)
-      .then(data => data.json())
-
-    setIsGeneratingAnswer(false)
-    
-    setChatHistory(prevHistory => [
-      ...prevHistory,
-      {
-        timestamp: Date.now(),
-        from: 'bot',
-        content: answer,
+    fetch('/api/open-ai', {
+      method: 'POST',
+      headers: {
+       'Content-type': 'application/json',
       },
-    ])
+      body: JSON.stringify({ messages: messagesToBeSent })
+    })
+      .then((response) => response.body)
+      .then((responseBody) => {
+        const reader = (responseBody as ReadableStream).getReader()
+    
+        return new ReadableStream({
+          start(controller) {
+            function push() {
+              reader.read().then(({ done, value }) => {
+                if (done) {
+                  controller.close()
+                  return
+                }
+                controller.enqueue(value)
+                const decodedString = new TextDecoder().decode(value)
+                
+                setChatHistory(prevHistory => {
+                  const latestMessage = prevHistory[prevHistory.length - 1]
+
+                  return [
+                    ...prevHistory.slice(0, -1),
+                    {
+                      ...latestMessage,
+                      content: latestMessage.content + decodedString,
+                    },
+                  ]
+                })
+                push()
+              })
+            }
+    
+            push()
+          },
+        })
+      })
   }
 
   useEffect(() => {
@@ -59,13 +90,13 @@ export default function Home() {
           style={{ height: 'calc(100% - 56px)' }}
         >
           <div className="overflow-y-scroll px-4" ref={scrollableBoxRef}>
-            {chatHistory.map((item) => {
+            {chatHistory.map((item, index) => {
               return (
                 <div
-                  key={item.timestamp}
-                  className={`flex mb-4 last:mb-0 ${item.from === 'bot' ? 'justify-end' : ''}`}
+                  key={index}
+                  className={`flex mb-4 last:mb-0 ${item.role === 'assistant' ? 'justify-end' : ''}`}
                 >
-                  <div className={`p-4 rounded-lg inline-block max-w-sm ${item.from === 'user' ? 'bg-indigo-500' : 'bg-yellow-600'}`}>{item.content}</div>
+                  <div className={`p-4 rounded-lg inline-block max-w-sm ${item.role === 'user' ? 'bg-indigo-500' : 'bg-yellow-600'}`}>{item.content}</div>
                 </div>
               )
             })}
